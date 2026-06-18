@@ -62,7 +62,7 @@ def main(argv):
     parser.add_argument('-i', '--instance', help='EC2 instance ID', required=True)
     parser.add_argument('-k', '--kms_key_id', help='KMS key', required=True)
     parser.add_argument('-p', '--preserve_volumes', help='Preserve original volumes',
-                        required=False, action='store_false')
+                        required=False, action='store_true')
     args = parser.parse_args()
 
     """ Set up AWS Session + Client + Resources + Waiters """
@@ -287,7 +287,7 @@ def main(argv):
         for cleanup in volume_data:
             print('[{}] Delete snapshot {}'.format(datetime.now().astimezone().isoformat(), cleanup['snapshot'].id))
             cleanup['snapshot'].delete()
-            if not args.preserve_volumes:
+            if args.preserve_volumes:
                 print('[{}] Skipping deletion of original volume {} ({})'.format(
                     datetime.now().astimezone().isoformat(), cleanup['volume'].id, cleanup['DeviceName']))
             else:
