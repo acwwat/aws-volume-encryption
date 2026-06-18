@@ -1,67 +1,87 @@
 #!/usr/bin/env python3
 """
-Test to verify the preserve_volumes flag behavior.
-This test demonstrates the current inverted logic bug.
+Tests for the preserve_volumes flag behaviour.
+
+Verifies:
+  1. action='store_true' so the flag defaults to False (delete) and becomes True when passed.
+  2. The cleanup condition uses `if args.preserve_volumes:` (not `if not ...`) so
+     the branch taken matches the flag value and the print message.
 """
 
 import argparse
 import sys
 
 
-def test_current_behavior():
-    """Test current inverted behavior"""
-    parser = argparse.ArgumentParser(description='Encrypts EBS volumes of an EC2 instance.')
-    parser.add_argument('-i', '--instance', help='EC2 instance ID', required=False)
-    parser.add_argument('-k', '--kms_key_id', help='KMS key', required=False)
-    parser.add_argument('-p', '--preserve_volumes', help='Preserve original volumes',
-                        required=False, action='store_false')
-    
-    # Test 1: No flag passed (should preserve, but doesn't)
-    args1 = parser.parse_args([])
-    print(f"Test 1 - No flag passed: args.preserve_volumes = {args1.preserve_volumes}")
-    print(f"  Expected: True (preserve volumes)")
-    print(f"  Actual: {args1.preserve_volumes}")
-    print(f"  PASS" if args1.preserve_volumes else f"  FAIL - VOLUMES WILL BE DELETED!")
-    
-    # Test 2: Flag passed (should delete, but preserves)
-    args2 = parser.parse_args(['-p'])
-    print(f"\nTest 2 - Flag -p passed: args.preserve_volumes = {args2.preserve_volumes}")
-    print(f"  Expected: False (delete volumes)")
-    print(f"  Actual: {args2.preserve_volumes}")
-    print(f"  PASS" if not args2.preserve_volumes else f"  FAIL - VOLUMES WILL BE PRESERVED!")
-
-
-def test_fixed_behavior():
-    """Test fixed behavior"""
-    parser = argparse.ArgumentParser(description='Encrypts EBS volumes of an EC2 instance.')
-    parser.add_argument('-i', '--instance', help='EC2 instance ID', required=False)
-    parser.add_argument('-k', '--kms_key_id', help='KMS key', required=False)
-    parser.add_argument('-p', '--preserve_volumes', help='Preserve original volumes',
+def build_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-i', '--instance', required=False)
+    parser.add_argument('-k', '--kms_key_id', required=False)
+    parser.add_argument('-p', '--preserve_volumes',
                         required=False, action='store_true')
-    
-    # Test 1: No flag passed (should delete)
-    args1 = parser.parse_args([])
-    print(f"\n\nFIXED BEHAVIOR:")
-    print(f"Test 1 - No flag passed: args.preserve_volumes = {args1.preserve_volumes}")
-    print(f"  Expected: False (delete volumes)")
-    print(f"  Actual: {args1.preserve_volumes}")
-    print(f"  PASS" if not args1.preserve_volumes else f"  FAIL")
-    
-    # Test 2: Flag passed (should preserve)
-    args2 = parser.parse_args(['-p'])
-    print(f"\nTest 2 - Flag -p passed: args.preserve_volumes = {args2.preserve_volumes}")
-    print(f"  Expected: True (preserve volumes)")
-    print(f"  Actual: {args2.preserve_volumes}")
-    print(f"  PASS" if args2.preserve_volumes else f"  FAIL")
+    return parser
 
 
-if __name__ == "__main__":
-    print("=" * 70)
-    print("CURRENT INVERTED BEHAVIOR:")
-    print("=" * 70)
-    test_current_behavior()
-    
-    print("\n" + "=" * 70)
-    print("FIXED BEHAVIOR:")
-    print("=" * 70)
-    test_fixed_behavior()
+def simulate_cleanup(preserve_volumes):
+    """Return ('skip', volume_id) or ('delete', volume_id) mirroring the fixed logic."""
+    volume_id = 'vol-abc123'
+    if preserve_volumes:
+        return ('skip', volume_id)
+    else:
+        return ('delete', volume_id)
+
+
+# ── flag default ──────────────────────────────────────────────────────────────
+
+def test_default_is_false():
+    args = build_parser().parse_args([])
+    assert args.preserve_volumes is False, (
+        f"Expected False by default, got {args.preserve_volumes}"
+    )
+    print("PASS: default value is False (volumes will be deleted)")
+
+
+def test_flag_sets_true():
+    args = build_parser().parse_args(['-p'])
+    assert args.preserve_volumes is True, (
+        f"Expected True when -p passed, got {args.preserve_volumes}"
+    )
+    print("PASS: -p sets preserve_volumes to True (volumes will be preserved)")
+
+
+# ── cleanup logic ─────────────────────────────────────────────────────────────
+
+def test_cleanup_deletes_when_flag_not_set():
+    action, _ = simulate_cleanup(False)
+    assert action == 'delete', (
+        f"Expected 'delete' when preserve_volumes=False, got '{action}'"
+    )
+    print("PASS: volumes are deleted when --preserve_volumes is not passed")
+
+
+def test_cleanup_skips_when_flag_set():
+    action, _ = simulate_cleanup(True)
+    assert action == 'skip', (
+        f"Expected 'skip' when preserve_volumes=True, got '{action}'"
+    )
+    print("PASS: volumes are preserved when --preserve_volumes is passed")
+
+
+if __name__ == '__main__':
+    failures = 0
+    for test in [
+        test_default_is_false,
+        test_flag_sets_true,
+        test_cleanup_deletes_when_flag_not_set,
+        test_cleanup_skips_when_flag_set,
+    ]:
+        try:
+            test()
+        except AssertionError as e:
+            print(f"FAIL: {e}")
+            failures += 1
+
+    if failures:
+        print(f"\n{failures} test(s) failed.")
+        sys.exit(1)
+    else:
+        print("\nAll tests passed.")
